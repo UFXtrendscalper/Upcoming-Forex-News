@@ -18,6 +18,14 @@ class AlertPreferences:
     sound_path: str | None = None
 
 
+def _clean_optional_str(value: Any) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return None
+
+
 @dataclass
 class AppPreferences:
     window_width: int = 1200
@@ -25,6 +33,8 @@ class AppPreferences:
     impacts: list[str] = field(default_factory=lambda: ["High"])
     currencies: list[str] = field(default_factory=list)
     search_text: str = ""
+    start_date: str | None = None
+    end_date: str | None = None
     auto_refresh_enabled: bool = False
     auto_refresh_minutes: int = 30
     export_directory: str | None = None
@@ -52,7 +62,9 @@ class ConfigManager:
         prefs.window_height = int(data.get("window_height", prefs.window_height))
         prefs.impacts = list(data.get("impacts", prefs.impacts))
         prefs.currencies = list(data.get("currencies", prefs.currencies))
-        prefs.search_text = str(data.get("search_text", prefs.search_text))
+        prefs.search_text = str(data.get("search_text", prefs.search_text)).strip()
+        prefs.start_date = _clean_optional_str(data.get("start_date"))
+        prefs.end_date = _clean_optional_str(data.get("end_date"))
         prefs.auto_refresh_enabled = bool(
             data.get("auto_refresh_enabled", prefs.auto_refresh_enabled)
         )
@@ -88,6 +100,8 @@ class ConfigManager:
             "impacts": prefs.impacts,
             "currencies": prefs.currencies,
             "search_text": prefs.search_text,
+            "start_date": prefs.start_date,
+            "end_date": prefs.end_date,
             "auto_refresh_enabled": prefs.auto_refresh_enabled,
             "auto_refresh_minutes": prefs.auto_refresh_minutes,
             "export_directory": prefs.export_directory,

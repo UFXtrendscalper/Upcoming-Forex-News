@@ -31,6 +31,7 @@ from .models import (
     ImpactLevel,
     build_events,
     filter_by_currency,
+    filter_by_date_range,
     filter_by_impact,
     search_events,
     sort_events,
@@ -93,6 +94,8 @@ class ForexNewsApp(Window):
         }
         self.currency_var = tk.StringVar()
         self.search_var = tk.StringVar()
+        self.start_date_var = tk.StringVar()
+        self.end_date_var = tk.StringVar()
         self.auto_refresh_var = tk.BooleanVar(value=False)
         self.auto_refresh_interval_var = tk.StringVar(
             value=str(DEFAULT_AUTO_REFRESH_MINUTES)
@@ -122,8 +125,23 @@ class ForexNewsApp(Window):
 
     def _build_styles(self) -> None:
         base = self.style
-        base.configure("Treeview", rowheight=28, font=("Segoe UI", 10))
-        base.configure("Treeview.Heading", font=("Segoe UI", 11, "bold"))
+        text_color = "#ffffff"
+        base.configure(
+            "Treeview",
+            rowheight=28,
+            font=("Segoe UI", 11, "bold"),
+            foreground=text_color,
+            background=self.colors.dark,
+            fieldbackground=self.colors.dark,
+        )
+        base.configure(
+            "Treeview.Heading", font=("Segoe UI", 11, "bold"), foreground=text_color
+        )
+        base.map(
+            "Treeview",
+            background=[("selected", self.colors.primary)],
+            foreground=[("selected", text_color)],
+        )
 
     def _build_menu(self) -> None:
         menubar = tk.Menu(self)
@@ -168,10 +186,13 @@ class ForexNewsApp(Window):
         self._build_footer(footer)
 
     def _build_header(self, parent: Frame) -> None:
-        Label(parent, text="Impact filters:").pack(side=LEFT, padx=(0, 6))
+        top_row = Frame(parent)
+        top_row.pack(fill=X)
+
+        Label(top_row, text="Impact filters:").pack(side=LEFT, padx=(0, 6))
         for impact in DEFAULT_IMPACT_ORDER:
             Checkbutton(
-                parent,
+                top_row,
                 text=impact.value,
                 variable=self.impact_filters[impact],
                 bootstyle="toolbutton",
@@ -179,64 +200,89 @@ class ForexNewsApp(Window):
             ).pack(side=LEFT, padx=2)
 
         Button(
-            parent,
+            top_row,
             text="High Impact Only",
             command=self._apply_high_impact_shortcut,
             bootstyle="secondary",
         ).pack(side=LEFT, padx=(12, 0))
 
         Button(
-            parent,
+            top_row,
             text="Export High Impact",
             command=self.export_high_impact,
             bootstyle="warning",
         ).pack(side=LEFT, padx=(4, 0))
 
         Checkbutton(
-            parent,
+            top_row,
             text="Alerts",
             variable=self.alert_manager.enabled_var,
             bootstyle="round-toggle",
             command=self.alert_manager.toggle,
         ).pack(side=LEFT, padx=(16, 4))
 
-        Label(parent, text="Currency (comma-separated):").pack(side=LEFT, padx=(16, 6))
-        currency_entry = Entry(parent, textvariable=self.currency_var, width=18)
+        bottom_row = Frame(parent)
+        bottom_row.pack(fill=X, pady=(8, 0))
+
+        Label(bottom_row, text="Currency (comma-separated):").pack(
+            side=LEFT, padx=(0, 6)
+        )
+        currency_entry = Entry(bottom_row, textvariable=self.currency_var, width=18)
         currency_entry.pack(side=LEFT)
         currency_entry.bind("<Return>", lambda _event: self.apply_filters())
 
-        Label(parent, text="Search:").pack(side=LEFT, padx=(16, 6))
-        search_entry = Entry(parent, textvariable=self.search_var, width=24)
+        Label(bottom_row, text="Search:").pack(side=LEFT, padx=(12, 6))
+        search_entry = Entry(bottom_row, textvariable=self.search_var, width=24)
         search_entry.pack(side=LEFT)
         search_entry.bind("<Return>", lambda _event: self.apply_filters())
 
-        Checkbutton(
-            parent,
+        Label(bottom_row, text="Date (YYYY-MM-DD):").pack(side=LEFT, padx=(12, 6))
+        start_entry = Entry(bottom_row, textvariable=self.start_date_var, width=12)
+        start_entry.pack(side=LEFT)
+        start_entry.bind("<Return>", lambda _event: self.apply_filters())
+
+        Label(bottom_row, text="to").pack(side=LEFT, padx=(4, 4))
+        end_entry = Entry(bottom_row, textvariable=self.end_date_var, width=12)
+        end_entry.pack(side=LEFT)
+        end_entry.bind("<Return>", lambda _event: self.apply_filters())
+
+        refresh_button = Button(
+            bottom_row,
+            text="Refresh",
+            command=lambda: self.refresh_data(force=True),
+            bootstyle="primary",
+        )
+        refresh_button.pack(side=RIGHT)
+
+        right_controls = Frame(bottom_row)
+        right_controls.pack(side=RIGHT, padx=(12, 0))
+
+        auto_refresh_toggle = Checkbutton(
+            right_controls,
             text="Auto Refresh",
             variable=self.auto_refresh_var,
             bootstyle="round-toggle",
             command=self._update_auto_refresh_state,
-        ).pack(side=LEFT, padx=(16, 4))
+        )
+        auto_refresh_toggle.pack(side=LEFT, padx=(0, 4))
 
         interval_combo = ttk.Combobox(
-            parent,
+            right_controls,
             textvariable=self.auto_refresh_interval_var,
             values=AUTO_REFRESH_CHOICES,
             width=5,
             state="readonly",
         )
         interval_combo.pack(side=LEFT)
-        interval_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_auto_refresh_state())
-
-        Button(parent, text="Reset Filters", command=self._reset_filters).pack(
-            side=LEFT, padx=(16, 0)
+        interval_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_auto_refresh_state()
         )
+
         Button(
-            parent,
-            text="Refresh",
-            command=lambda: self.refresh_data(force=True),
-            bootstyle="primary",
-        ).pack(side=RIGHT)
+            right_controls,
+            text="Reset Filters",
+            command=self._reset_filters,
+        ).pack(side=LEFT, padx=(12, 0))
 
     def _build_tree(self, parent: Frame) -> None:
         self.tree = ttk.Treeview(parent, columns=TREE_COLUMNS, show="headings", height=18)
@@ -264,20 +310,27 @@ class ForexNewsApp(Window):
         for column in TREE_COLUMNS:
             self.tree.heading(column, text=headings[column])
             anchor = "e" if column in {"time", "actual", "forecast", "previous"} else "w"
-            self.tree.column(column, width=widths[column], anchor=anchor)
+            self.tree.column(
+                column,
+                width=widths[column],
+                anchor=anchor,
+                stretch=True,
+            )
 
         self.tree.tag_configure(
-            "impact-high", background=self.colors.danger, foreground=self.colors.light
+            "impact-high", background=self.colors.danger, foreground="#ffffff"
         )
         self.tree.tag_configure(
             "impact-medium",
             background=self.colors.warning,
-            foreground=self.colors.dark,
+            foreground="#ffffff",
         )
         self.tree.tag_configure(
-            "impact-low", background=self.colors.info, foreground=self.colors.dark
+            "impact-low", background=self.colors.info, foreground="#ffffff"
         )
-        self.tree.tag_configure("odd-row", background=self.colors.secondary)
+        self.tree.tag_configure(
+            "odd-row", background=self.colors.secondary, foreground="#ffffff"
+        )
         self.tree.tag_configure(
             "event-new", background=self.colors.success, foreground=self.colors.light
         )
@@ -326,6 +379,8 @@ class ForexNewsApp(Window):
 
         self.currency_var.set(", ".join(prefs.currencies))
         self.search_var.set(prefs.search_text)
+        self.start_date_var.set(prefs.start_date or "")
+        self.end_date_var.set(prefs.end_date or "")
         self.auto_refresh_var.set(prefs.auto_refresh_enabled)
         self.auto_refresh_interval_var.set(str(prefs.auto_refresh_minutes))
 
@@ -354,6 +409,8 @@ class ForexNewsApp(Window):
             impacts=impacts,
             currencies=currencies,
             search_text=self.search_var.get().strip(),
+            start_date=self.start_date_var.get().strip() or None,
+            end_date=self.end_date_var.get().strip() or None,
             auto_refresh_enabled=self.auto_refresh_var.get(),
             auto_refresh_minutes=self._get_auto_refresh_minutes(),
             export_directory=str(self.export_directory) if self.export_directory else None,
@@ -490,6 +547,24 @@ class ForexNewsApp(Window):
         if currencies:
             events = filter_by_currency(events, currencies)
 
+        start_input = self.start_date_var.get().strip()
+        end_input = self.end_date_var.get().strip()
+        self.start_date_var.set(start_input)
+        self.end_date_var.set(end_input)
+        try:
+            start_date = self._parse_filter_date(start_input)
+            end_date = self._parse_filter_date(end_input)
+        except ValueError as exc:
+            self.status_var.set(f"Invalid date filter: {exc}")
+            return
+
+        if start_date and end_date and start_date > end_date:
+            self.status_var.set("Invalid date filter: start date is after end date")
+            return
+
+        if start_date or end_date:
+            events = filter_by_date_range(events, start_date, end_date)
+
         query = self.search_var.get().strip()
         if query:
             events = search_events(events, query)
@@ -558,6 +633,8 @@ class ForexNewsApp(Window):
             var.set(impact is ImpactLevel.HIGH)
         self.currency_var.set("")
         self.search_var.set("")
+        self.start_date_var.set("")
+        self.end_date_var.set("")
         self.apply_filters(status_prefix="Filters reset")
 
     def _show_error_prompt(self, message: str, cached_result: CalendarFetchResult | None) -> None:
@@ -777,6 +854,14 @@ class ForexNewsApp(Window):
             f"Previous: {event.previous or 'n/a'}",
         ]
         return "\n".join(lines)
+
+    def _parse_filter_date(self, raw: str) -> date | None:
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError(f"{raw!r} is not a valid date (use YYYY-MM-DD)") from exc
 
     def _parse_currencies(self, raw: str) -> Sequence[str]:
         tokens = [token.strip().upper() for token in raw.split(",")]

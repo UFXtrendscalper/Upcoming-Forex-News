@@ -8,6 +8,7 @@ from src.models import (
     ImpactLevel,
     build_events,
     filter_by_currency,
+    filter_by_date_range,
     filter_by_impact,
     search_events,
     sort_events,
@@ -55,6 +56,20 @@ def test_filter_by_currency_case_insensitive(sample_payload):
     events = build_events(sample_payload)
     filtered = filter_by_currency(events, ["usd"])
     assert [event.currency for event in filtered] == ["USD"]
+
+
+def test_filter_by_date_range_limits_results(sample_payload):
+    events = build_events(sample_payload)
+    start = datetime.date(2025, 10, 2)
+    end = datetime.date(2025, 10, 2)
+    filtered = filter_by_date_range(events, start, end)
+    assert len(filtered) == 1
+    assert filtered[0].currency == "EUR"
+
+    before = datetime.date(2025, 10, 1)
+    filtered_before = filter_by_date_range(events, None, before)
+    assert len(filtered_before) == 1
+    assert filtered_before[0].currency == "USD"
 
 
 def test_search_events_matches_title(sample_payload):

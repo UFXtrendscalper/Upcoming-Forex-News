@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Iterable, Mapping, MutableMapping, Optional, Sequence
 
 from dateutil import parser as date_parser
+
+try:
+    from datetime import UTC  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - Python < 3.11 fallback
+    UTC = timezone.utc
 
 
 class ImpactLevel(str, Enum):
@@ -131,6 +136,29 @@ def filter_by_currency(
     return [event for event in events if event.currency.upper() in normalized]
 
 
+def filter_by_date_range(
+    events: Iterable[CalendarEvent],
+    start: date | None,
+    end: date | None,
+    *,
+    use_local_time: bool = True,
+) -> list[CalendarEvent]:
+    if not start and not end:
+        return list(events)
+
+    results: list[CalendarEvent] = []
+    for event in events:
+        event_date = (
+            event.datetime_local if use_local_time else event.datetime_utc
+        ).date()
+        if start and event_date < start:
+            continue
+        if end and event_date > end:
+            continue
+        results.append(event)
+    return results
+
+
 def search_events(events: Iterable[CalendarEvent], query: str) -> list[CalendarEvent]:
     if not query:
         return list(events)
@@ -187,6 +215,7 @@ __all__ = [
     "group_events_by_day",
     "filter_by_impact",
     "filter_by_currency",
+    "filter_by_date_range",
     "search_events",
     "sort_events",
 ]
