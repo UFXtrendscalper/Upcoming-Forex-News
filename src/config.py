@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any, Dict
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "config.json"
+MEDIA_PATH = Path(__file__).resolve().parent.parent / "media"
+DEFAULT_ALERT_SOUND = MEDIA_PATH / "Cyber_News_mp3.wav"
+DEFAULT_ALERT_SOUND_STR = (
+    str(DEFAULT_ALERT_SOUND) if DEFAULT_ALERT_SOUND.exists() else None
+)
 
 
 @dataclass
@@ -15,7 +20,7 @@ class AlertPreferences:
     enabled: bool = True
     offsets: list[int] = field(default_factory=lambda: [60, 30, 15, 5])
     snooze_minutes: int = 5
-    sound_path: str | None = None
+    sound_path: str | None = DEFAULT_ALERT_SOUND_STR
 
 
 def _clean_optional_str(value: Any) -> str | None:
@@ -86,7 +91,13 @@ class ConfigManager:
         prefs.alerts.snooze_minutes = int(
             alert_data.get("snooze_minutes", prefs.alerts.snooze_minutes)
         )
-        prefs.alerts.sound_path = alert_data.get("sound_path")
+        sound_value = _clean_optional_str(alert_data.get("sound_path"))
+        if sound_value:
+            prefs.alerts.sound_path = sound_value
+        elif DEFAULT_ALERT_SOUND_STR:
+            prefs.alerts.sound_path = DEFAULT_ALERT_SOUND_STR
+        else:
+            prefs.alerts.sound_path = None
 
         self.preferences = prefs
         return prefs
@@ -119,4 +130,10 @@ class ConfigManager:
         )
 
 
-__all__ = ["ConfigManager", "AppPreferences", "AlertPreferences", "CONFIG_PATH"]
+__all__ = [
+    "ConfigManager",
+    "AppPreferences",
+    "AlertPreferences",
+    "CONFIG_PATH",
+    "DEFAULT_ALERT_SOUND",
+]

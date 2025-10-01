@@ -24,7 +24,12 @@ from .api_client import (
     CalendarFetchResult,
 )
 from .export_markdown import export_markdown, build_default_output_path
-from .config import ConfigManager, AppPreferences, AlertPreferences
+from .config import (
+    ConfigManager,
+    AppPreferences,
+    AlertPreferences,
+    DEFAULT_ALERT_SOUND,
+)
 from .logging_setup import configure_logging
 from .models import (
     CalendarEvent,
@@ -75,7 +80,8 @@ class ForexNewsApp(Window):
         self.config_manager = ConfigManager()
         preferences = self.config_manager.load()
 
-        self.client = CalendarClient(base_url=preferences.api_url or DEFAULT_CALENDAR_URL)
+        preferences.api_url = None
+        self.client = CalendarClient(base_url=DEFAULT_CALENDAR_URL)
         self._fetch_thread: threading.Thread | None = None
 
         self.all_events: list[CalendarEvent] = []
@@ -94,8 +100,9 @@ class ForexNewsApp(Window):
         }
         self.currency_var = tk.StringVar()
         self.search_var = tk.StringVar()
-        self.start_date_var = tk.StringVar()
-        self.end_date_var = tk.StringVar()
+        today_str = self._default_filter_date()
+        self.start_date_var = tk.StringVar(value=today_str)
+        self.end_date_var = tk.StringVar(value=today_str)
         self.auto_refresh_var = tk.BooleanVar(value=False)
         self.auto_refresh_interval_var = tk.StringVar(
             value=str(DEFAULT_AUTO_REFRESH_MINUTES)
@@ -307,13 +314,13 @@ class ForexNewsApp(Window):
             "forecast": 110,
             "previous": 110,
         }
+        self._base_tree_column_widths = widths.copy()
         for column in TREE_COLUMNS:
-            self.tree.heading(column, text=headings[column])
-            anchor = "e" if column in {"time", "actual", "forecast", "previous"} else "w"
+            self.tree.heading(column, text=headings[column], anchor="center")
             self.tree.column(
                 column,
                 width=widths[column],
-                anchor=anchor,
+                anchor="center",
                 stretch=True,
             )
 
@@ -350,11 +357,35 @@ class ForexNewsApp(Window):
         parent.grid_columnconfigure(0, weight=1)
 
         self.tree.bind("<Double-1>", self._on_tree_double_click)
+        self.after(200, self._auto_size_tree_columns)
 
     def _build_footer(self, parent: Frame) -> None:
         Label(parent, textvariable=self.status_var, anchor="w").pack(fill=X)
         Label(parent, textvariable=self.last_updated_var, anchor="w").pack(fill=X)
         self.progress = ttk.Progressbar(parent, mode="indeterminate")
+
+    def _auto_size_tree_columns(self) -> None:
+        if not hasattr(self, "tree") or not hasattr(self, "_base_tree_column_widths"):
+            return
+        try:
+            self.update_idletasks()
+            available_width = self.tree.winfo_width()
+        except Exception:
+            return
+        if available_width <= 1:
+            self.after(160, self._auto_size_tree_columns)
+            return
+        base_total = sum(self._base_tree_column_widths.values())
+        if available_width <= base_total:
+            return
+        extra = available_width - base_total
+        per_column, remainder = divmod(extra, len(TREE_COLUMNS))
+        for column in TREE_COLUMNS:
+            width = self._base_tree_column_widths[column] + per_column
+            if remainder:
+                width += 1
+                remainder -= 1
+            self.tree.column(column, width=width)
 
     def _show_spinner(self, active: bool) -> None:
         if active:
@@ -379,8 +410,8 @@ class ForexNewsApp(Window):
 
         self.currency_var.set(", ".join(prefs.currencies))
         self.search_var.set(prefs.search_text)
-        self.start_date_var.set(prefs.start_date or "")
-        self.end_date_var.set(prefs.end_date or "")
+        self.start_date_var.set(prefs.start_date or self._default_filter_date())
+        self.end_date_var.set(prefs.end_date or self._default_filter_date())
         self.auto_refresh_var.set(prefs.auto_refresh_enabled)
         self.auto_refresh_interval_var.set(str(prefs.auto_refresh_minutes))
 
@@ -414,7 +445,7 @@ class ForexNewsApp(Window):
             auto_refresh_enabled=self.auto_refresh_var.get(),
             auto_refresh_minutes=self._get_auto_refresh_minutes(),
             export_directory=str(self.export_directory) if self.export_directory else None,
-            api_url=self.client.base_url,
+            api_url=None,
             alerts=alerts,
         )
 
@@ -633,8 +664,9 @@ class ForexNewsApp(Window):
             var.set(impact is ImpactLevel.HIGH)
         self.currency_var.set("")
         self.search_var.set("")
-        self.start_date_var.set("")
-        self.end_date_var.set("")
+        default_date = self._default_filter_date()
+        self.start_date_var.set(default_date)
+        self.end_date_var.set(default_date)
         self.apply_filters(status_prefix="Filters reset")
 
     def _show_error_prompt(self, message: str, cached_result: CalendarFetchResult | None) -> None:
@@ -728,7 +760,7 @@ class ForexNewsApp(Window):
         except CalendarAPIError as exc:
             Messagebox.show_error("Export failed", str(exc), parent=self)
             return
-        Messagebox.show_info("Export complete", f"Saved markdown to\n{output_path}", parent=self)
+        Messagebox.show_info("Export complete", "Saved Markdown", parent=self)
 
     def _show_settings_dialog(self) -> None:
         dialog = tk.Toplevel(self)
@@ -737,15 +769,11 @@ class ForexNewsApp(Window):
         dialog.grab_set()
         dialog.resizable(False, False)
 
-        api_var = tk.StringVar(value=self.client.base_url)
         export_var = tk.StringVar(
             value=str(self.export_directory) if self.export_directory else ""
         )
 
         Frame(dialog, height=10).pack()
-
-        Label(dialog, text="Calendar API URL").pack(anchor="w", padx=16)
-        Entry(dialog, textvariable=api_var, width=48).pack(fill=X, padx=16)
 
         Label(dialog, text="Export directory").pack(anchor="w", padx=16, pady=(12, 0))
         export_frame = Frame(dialog)
@@ -769,7 +797,7 @@ class ForexNewsApp(Window):
             button_frame,
             text="Save",
             bootstyle="primary",
-            command=lambda: self._apply_general_settings(dialog, api_var.get(), export_var.get()),
+            command=lambda: self._apply_general_settings(dialog, export_var.get()),
         ).pack(side=RIGHT, padx=(0, 8))
 
         dialog.wait_window()
@@ -779,14 +807,8 @@ class ForexNewsApp(Window):
         if path:
             var.set(path)
 
-    def _apply_general_settings(self, dialog: tk.Toplevel, api_url: str, export_dir: str) -> None:
-        api_value = api_url.strip()
+    def _apply_general_settings(self, dialog: tk.Toplevel, export_dir: str) -> None:
         export_value = export_dir.strip()
-
-        if api_value:
-            self.client = CalendarClient(base_url=api_value)
-        else:
-            self.client = CalendarClient(base_url=DEFAULT_CALENDAR_URL)
 
         if export_value:
             path_obj = Path(export_value).expanduser()
@@ -802,7 +824,7 @@ class ForexNewsApp(Window):
         self.save_preferences()
         dialog.destroy()
         self.status_var.set(self._format_status("Settings updated"))
-        logging.info('Settings updated: api_url=%s, export_dir=%s', self.client.base_url, self.export_directory)
+        logging.info('Settings updated: export_dir=%s', self.export_directory)
         self.refresh_data(force=True)
 
     def _on_exit(self) -> None:
@@ -867,6 +889,9 @@ class ForexNewsApp(Window):
         tokens = [token.strip().upper() for token in raw.split(",")]
         return [token for token in tokens if token]
 
+    def _default_filter_date(self) -> str:
+        return date.today().strftime("%Y-%m-%d")
+
     def _event_changed(
         self, previous: CalendarEvent, current: CalendarEvent
     ) -> bool:
@@ -920,18 +945,28 @@ class AlertManager:
         self.reminder_offsets: dict[ImpactLevel, list[int]] = {
             ImpactLevel.HIGH: list(prefs.offsets or [60, 30, 15, 5])
         }
-        self.custom_sound_path: Path | None = (Path(prefs.sound_path) if prefs.sound_path else None)
+        self.default_sound_path: Path | None = (
+            DEFAULT_ALERT_SOUND if DEFAULT_ALERT_SOUND.exists() else None
+        )
+        self.custom_sound_path: Path | None = self._resolve_sound_path(prefs.sound_path)
         self._jobs: dict[tuple[str, str], str] = {}
 
     def update_preferences(self, prefs: AlertPreferences) -> None:
         self.enabled_var.set(prefs.enabled)
         self.snooze_minutes.set(prefs.snooze_minutes)
         self.reminder_offsets[ImpactLevel.HIGH] = list(prefs.offsets or [60, 30, 15, 5])
-        self.custom_sound_path = Path(prefs.sound_path) if prefs.sound_path else None
+        self.custom_sound_path = self._resolve_sound_path(prefs.sound_path)
         if self.enabled_var.get():
             self.reload_events(self.app.all_events)
         else:
             self.cancel_all()
+
+    def _resolve_sound_path(self, value: str | None) -> Path | None:
+        if value:
+            candidate = Path(value).expanduser()
+            if candidate.exists() and candidate.suffix.lower() == ".wav":
+                return candidate
+        return self.default_sound_path
 
     def get_preferences(self) -> AlertPreferences:
         offsets = self.reminder_offsets.get(ImpactLevel.HIGH, [])
@@ -940,7 +975,11 @@ class AlertManager:
             enabled=self.enabled_var.get(),
             offsets=normalized or [60, 30, 15, 5],
             snooze_minutes=max(1, self.snooze_minutes.get()),
-            sound_path=str(self.custom_sound_path) if self.custom_sound_path else None,
+            sound_path=(
+                str(self.custom_sound_path or self.default_sound_path)
+                if self.custom_sound_path or self.default_sound_path
+                else None
+            ),
         )
 
     def toggle(self) -> None:
@@ -979,9 +1018,8 @@ class AlertManager:
         offsets_var = tk.StringVar(
             value=", ".join(str(value) for value in self.reminder_offsets[ImpactLevel.HIGH])
         )
-        sound_var = tk.StringVar(
-            value=str(self.custom_sound_path) if self.custom_sound_path else ""
-        )
+        current_sound = self.custom_sound_path or self.default_sound_path
+        sound_var = tk.StringVar(value=str(current_sound) if current_sound else "")
         snooze_var = tk.StringVar(value=str(self.snooze_minutes.get()))
 
         Frame(dialog, height=10).pack()
@@ -1005,6 +1043,11 @@ class AlertManager:
             sound_frame,
             text="Clear",
             command=lambda: sound_var.set(""),
+        ).pack(side=LEFT, padx=(4, 0))
+        Button(
+            sound_frame,
+            text="Test",
+            command=lambda: self._preview_sound(sound_var),
         ).pack(side=LEFT, padx=(4, 0))
 
         button_frame = Frame(dialog)
@@ -1051,6 +1094,7 @@ class AlertManager:
             return
 
         path_value = sound_var.get().strip()
+        candidate_path: Path | None = None
         if path_value:
             candidate = Path(path_value)
             if not candidate.exists() or candidate.suffix.lower() != ".wav":
@@ -1060,9 +1104,8 @@ class AlertManager:
                     parent=self.app,
                 )
                 return
-            self.custom_sound_path = candidate
-        else:
-            self.custom_sound_path = None
+            candidate_path = candidate
+        self.custom_sound_path = candidate_path or self.default_sound_path
 
         self.reminder_offsets[ImpactLevel.HIGH] = sorted({abs(offset) for offset in offsets}, reverse=True)
         self.snooze_minutes.set(max(1, abs(snooze_minutes)))
@@ -1077,6 +1120,22 @@ class AlertManager:
         )
         if path:
             sound_var.set(path)
+
+    def _preview_sound(self, sound_var: tk.StringVar) -> None:
+        path_value = sound_var.get().strip()
+        candidate: Path | None
+        if path_value:
+            candidate = Path(path_value)
+            if not candidate.exists() or candidate.suffix.lower() != ".wav":
+                Messagebox.show_error(
+                    "Invalid sound",
+                    "Select an existing .wav file.",
+                    parent=self.app,
+                )
+                return
+        else:
+            candidate = self.custom_sound_path or self.default_sound_path
+        self._play_sound(path=candidate)
 
     def _schedule_event(
         self,
@@ -1163,14 +1222,15 @@ class AlertManager:
         popup.destroy()
         self._schedule_snooze(event)
 
-    def _play_sound(self) -> None:
-        if self.custom_sound_path:
+    def _play_sound(self, path: Path | None = None) -> None:
+        candidate = path or self.custom_sound_path or self.default_sound_path
+        if candidate and candidate.exists():
             try:
                 if platform.system() == "Windows":
                     import winsound
 
                     winsound.PlaySound(
-                        str(self.custom_sound_path),
+                        str(candidate),
                         winsound.SND_FILENAME | winsound.SND_ASYNC,
                     )
                     return
