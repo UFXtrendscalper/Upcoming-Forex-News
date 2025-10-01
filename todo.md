@@ -56,7 +56,7 @@
 ## 7. Filtering & User Controls
 - ✅ Add impact filter buttons/checklist (High/Medium/Low/Holiday) with toggle state.
 - ✅ Include currency dropdown and keyword search entry; filter Treeview in real-time.
-- ✅ Supply date range selector (current week by default) with navigation to previous/next week if API supports.
+- [ ] Supply date range selector (current week by default) with navigation to previous/next week if API supports.
 - ✅ Offer quick "High Impact Only" shortcut button and export trigger.
 - ✅ Add reset filters control.
 
@@ -64,10 +64,10 @@
 
 ## 8. Background Tasks & Refresh
 - ✅ Skip network refresh on launch when cached data covers current day; only fetch when cache stale.
-- [ ] Implement async-friendly refresh using `after()` loop or `threading` to avoid blocking UI during fetches.
-- [ ] Show progress indicator/spinner while downloading.
-- [ ] Cache latest dataset and diff against previous to highlight newly added/changed events.
-- [ ] Add auto-refresh interval setting (e.g., every 30 or 60 minutes) with toggle.
+- ✅ Implement async-friendly refresh using `after()` loop or `threading` to avoid blocking UI during fetches.
+- ✅ Show progress indicator/spinner while downloading.
+- ✅ Cache latest dataset and diff against previous to highlight newly added/changed events.
+- ✅ Add auto-refresh interval setting (e.g., every 30 or 60 minutes) with toggle.
 - [ ] Schedule alert notifications for high-impact events with pop-up dialogs at 60/30/15/5 minute offsets and optional snooze controls.
 - [ ] Support user-provided `.wav` alert sounds and configurable reminder timings per impact level.
 

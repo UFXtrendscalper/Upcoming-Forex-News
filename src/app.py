@@ -43,6 +43,8 @@ DEFAULT_IMPACT_ORDER = (
     ImpactLevel.LOW,
     ImpactLevel.HOLIDAY,
 )
+DEFAULT_AUTO_REFRESH_MINUTES = 30
+AUTO_REFRESH_CHOICES = ("15", "30", "45", "60")
 
 
 class ForexNewsApp(Window):
@@ -65,18 +67,27 @@ class ForexNewsApp(Window):
         self.last_fetch_source: str | None = None
         self.last_fetch_timestamp: datetime | None = None
 
+        self.previous_events_by_uid: dict[str, CalendarEvent] = {}
+        self._new_event_uids: set[str] = set()
+        self._changed_event_uids: set[str] = set()
+
         self.impact_filters: dict[ImpactLevel, tk.BooleanVar] = {
             impact: tk.BooleanVar(value=(impact is ImpactLevel.HIGH))
             for impact in DEFAULT_IMPACT_ORDER
         }
         self.currency_var = tk.StringVar()
         self.search_var = tk.StringVar()
+        self.auto_refresh_var = tk.BooleanVar(value=False)
+        self.auto_refresh_interval_var = tk.StringVar(
+            value=str(DEFAULT_AUTO_REFRESH_MINUTES)
+        )
         self.status_var = tk.StringVar(value="Ready")
         self.last_updated_var = tk.StringVar(
             value="Last updated: waiting for data (no cache loaded)"
         )
 
         self._tree_event_map: dict[str, CalendarEvent] = {}
+        self._auto_refresh_job: str | None = None
 
         self._build_styles()
         self._build_menu()
@@ -167,6 +178,24 @@ class ForexNewsApp(Window):
         search_entry.pack(side=LEFT)
         search_entry.bind("<Return>", lambda _event: self.apply_filters())
 
+        Checkbutton(
+            parent,
+            text="Auto Refresh",
+            variable=self.auto_refresh_var,
+            bootstyle="round-toggle",
+            command=self._update_auto_refresh_state,
+        ).pack(side=LEFT, padx=(16, 4))
+
+        interval_combo = ttk.Combobox(
+            parent,
+            textvariable=self.auto_refresh_interval_var,
+            values=AUTO_REFRESH_CHOICES,
+            width=5,
+            state="readonly",
+        )
+        interval_combo.pack(side=LEFT)
+        interval_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_auto_refresh_state())
+
         Button(parent, text="Reset Filters", command=self._reset_filters).pack(
             side=LEFT, padx=(16, 0)
         )
@@ -217,6 +246,12 @@ class ForexNewsApp(Window):
             "impact-low", background=self.colors.info, foreground=self.colors.dark
         )
         self.tree.tag_configure("odd-row", background=self.colors.secondary)
+        self.tree.tag_configure(
+            "event-new", background=self.colors.success, foreground=self.colors.light
+        )
+        self.tree.tag_configure(
+            "event-updated", background=self.colors.primary, foreground=self.colors.light
+        )
 
         y_scroll = ttk.Scrollbar(parent, orient="vertical", command=self.tree.yview)
         x_scroll = ttk.Scrollbar(parent, orient="horizontal", command=self.tree.xview)
@@ -234,6 +269,17 @@ class ForexNewsApp(Window):
     def _build_footer(self, parent: Frame) -> None:
         Label(parent, textvariable=self.status_var, anchor="w").pack(fill=X)
         Label(parent, textvariable=self.last_updated_var, anchor="w").pack(fill=X)
+        self.progress = ttk.Progressbar(parent, mode="indeterminate")
+
+    def _show_spinner(self, active: bool) -> None:
+        if active:
+            if not self.progress.winfo_ismapped():
+                self.progress.pack(fill=X, pady=(4, 0))
+            self.progress.start(12)
+        else:
+            if self.progress.winfo_manager():
+                self.progress.stop()
+                self.progress.pack_forget()
 
     def _load_cache_on_startup(self) -> None:
         cached = self.client.load_cache()
@@ -256,6 +302,10 @@ class ForexNewsApp(Window):
 
         self.all_events = events
         self.latest_event_date = self._latest_event_date(events)
+        self.previous_events_by_uid = {event.uid: event for event in events}
+        self._new_event_uids.clear()
+        self._changed_event_uids.clear()
+
         self.apply_filters(status_prefix="Loaded cached calendar")
         self._update_last_updated(
             source=cached.source,
@@ -281,6 +331,7 @@ class ForexNewsApp(Window):
             self.apply_filters(status_prefix="Cached calendar already up to date")
             return
 
+        self._show_spinner(True)
         self.status_var.set("Refreshing data...")
         self._fetch_thread = threading.Thread(target=self._fetch_data, daemon=True)
         self._fetch_thread.start()
@@ -299,6 +350,19 @@ class ForexNewsApp(Window):
         self, events: list[CalendarEvent], fetch_result
     ) -> None:
         self._fetch_thread = None
+        self._show_spinner(False)
+
+        previous_map = self.previous_events_by_uid
+        current_map = {event.uid: event for event in events}
+
+        self._new_event_uids = set(current_map) - set(previous_map)
+        self._changed_event_uids = {
+            uid
+            for uid, event in current_map.items()
+            if uid in previous_map and self._event_changed(previous_map[uid], event)
+        }
+        self.previous_events_by_uid = current_map
+
         self.all_events = sort_events(events, by_impact_first=False)
         self.latest_event_date = self._latest_event_date(self.all_events)
         self.apply_filters(status_prefix="Fetched latest calendar from API")
@@ -310,6 +374,7 @@ class ForexNewsApp(Window):
 
     def _handle_error(self, message: str) -> None:
         self._fetch_thread = None
+        self._show_spinner(False)
         Messagebox.show_error("Unable to refresh data", message, parent=self)
         self.status_var.set("Failed to refresh data")
 
@@ -350,6 +415,10 @@ class ForexNewsApp(Window):
                 tags.append("impact-low")
             if index % 2:
                 tags.append("odd-row")
+            if event.uid in self._new_event_uids:
+                tags.append("event-new")
+            elif event.uid in self._changed_event_uids:
+                tags.append("event-updated")
 
             local_dt = event.datetime_local
             item_id = self.tree.insert(
@@ -421,6 +490,7 @@ class ForexNewsApp(Window):
         )
 
     def _on_exit(self) -> None:
+        self._cancel_auto_refresh()
         self.destroy()
 
     def _latest_event_date(self, events: Iterable[CalendarEvent]) -> date | None:
@@ -470,6 +540,46 @@ class ForexNewsApp(Window):
     def _parse_currencies(self, raw: str) -> Sequence[str]:
         tokens = [token.strip().upper() for token in raw.split(",")]
         return [token for token in tokens if token]
+
+    def _event_changed(
+        self, previous: CalendarEvent, current: CalendarEvent
+    ) -> bool:
+        fields = ("impact", "actual", "forecast", "previous")
+        return any(getattr(previous, field) != getattr(current, field) for field in fields)
+
+    def _update_auto_refresh_state(self) -> None:
+        if self.auto_refresh_var.get():
+            self._schedule_auto_refresh(immediate=True)
+        else:
+            self._cancel_auto_refresh()
+
+    def _schedule_auto_refresh(self, *, immediate: bool) -> None:
+        self._cancel_auto_refresh()
+        minutes = self._get_auto_refresh_minutes()
+        if minutes <= 0:
+            return
+        delay_ms = 1000 if immediate else minutes * 60 * 1000
+        self._auto_refresh_job = self.after(delay_ms, self._auto_refresh_tick)
+
+    def _auto_refresh_tick(self) -> None:
+        self._auto_refresh_job = None
+        if not self.auto_refresh_var.get():
+            return
+        self.refresh_data(force=False)
+        self._schedule_auto_refresh(immediate=True)
+
+    def _cancel_auto_refresh(self) -> None:
+        if self._auto_refresh_job is not None:
+            self.after_cancel(self._auto_refresh_job)
+            self._auto_refresh_job = None
+
+    def _get_auto_refresh_minutes(self) -> int:
+        try:
+            minutes = int(self.auto_refresh_interval_var.get())
+        except (TypeError, ValueError):
+            minutes = DEFAULT_AUTO_REFRESH_MINUTES
+            self.auto_refresh_interval_var.set(str(minutes))
+        return max(minutes, 0)
 
 
 def run() -> None:
