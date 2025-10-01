@@ -15,8 +15,9 @@ from ttkbootstrap.constants import BOTH, END, LEFT, RIGHT, X
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.widgets import Button, Checkbutton, Entry, Frame, Label
 
-from .api_client import CalendarAPIError, CalendarClient
-from .export_markdown import export_markdown
+from .api_client import CalendarAPIError, CalendarClient, DEFAULT_CALENDAR_URL
+from .export_markdown import export_markdown, build_default_output_path
+from .config import ConfigManager, AppPreferences, AlertPreferences
 from .models import (
     CalendarEvent,
     ImpactLevel,
@@ -60,7 +61,10 @@ class ForexNewsApp(Window):
         style = self.style
         self.colors = style.colors
 
-        self.client = CalendarClient()
+        self.config_manager = ConfigManager()
+        preferences = self.config_manager.load()
+
+        self.client = CalendarClient(base_url=preferences.api_url or DEFAULT_CALENDAR_URL)
         self._fetch_thread: threading.Thread | None = None
 
         self.all_events: list[CalendarEvent] = []
@@ -90,12 +94,17 @@ class ForexNewsApp(Window):
 
         self._tree_event_map: dict[str, CalendarEvent] = {}
         self._auto_refresh_job: str | None = None
+        self.export_directory: Path | None = None
 
-        self.alert_manager = AlertManager(self)
+        self.alert_manager = AlertManager(self, preferences.alerts)
 
         self._build_styles()
         self._build_menu()
         self._build_layout()
+
+        self._applying_preferences = True
+        self._apply_preferences(preferences)
+        self._applying_preferences = False
 
         self.protocol("WM_DELETE_WINDOW", self._on_exit)
         self._load_cache_on_startup()
@@ -122,7 +131,7 @@ class ForexNewsApp(Window):
 
         tools_menu = tk.Menu(menubar, tearoff=False)
         tools_menu.add_command(
-            label="Settings", command=self._show_settings_placeholder
+            label="Settings", command=self._show_settings_dialog
         )
         tools_menu.add_command(
             label="Alerts", command=self.alert_manager.show_settings_dialog
@@ -293,6 +302,63 @@ class ForexNewsApp(Window):
                 self.progress.stop()
                 self.progress.pack_forget()
 
+    def _apply_preferences(self, prefs: AppPreferences) -> None:
+        try:
+            self.geometry(f"{prefs.window_width}x{prefs.window_height}")
+        except Exception:
+            pass
+
+        for impact, var in self.impact_filters.items():
+            var.set(impact.value in prefs.impacts)
+        if not any(var.get() for var in self.impact_filters.values()):
+            self.impact_filters[ImpactLevel.HIGH].set(True)
+
+        self.currency_var.set(", ".join(prefs.currencies))
+        self.search_var.set(prefs.search_text)
+        self.auto_refresh_var.set(prefs.auto_refresh_enabled)
+        self.auto_refresh_interval_var.set(str(prefs.auto_refresh_minutes))
+
+        if prefs.export_directory:
+            self.export_directory = Path(prefs.export_directory).expanduser()
+        else:
+            self.export_directory = None
+
+        self.alert_manager.update_preferences(prefs.alerts)
+
+        self._cancel_auto_refresh()
+        if self.auto_refresh_var.get():
+            self._schedule_auto_refresh(immediate=True)
+
+    def _collect_preferences(self) -> AppPreferences:
+        width = max(self.winfo_width(), 600)
+        height = max(self.winfo_height(), 480)
+        impacts = [impact.value for impact, var in self.impact_filters.items() if var.get()]
+        if not impacts:
+            impacts = [ImpactLevel.HIGH.value]
+        currencies = self._parse_currencies(self.currency_var.get())
+        alerts = self.alert_manager.get_preferences()
+        return AppPreferences(
+            window_width=width,
+            window_height=height,
+            impacts=impacts,
+            currencies=currencies,
+            search_text=self.search_var.get().strip(),
+            auto_refresh_enabled=self.auto_refresh_var.get(),
+            auto_refresh_minutes=self._get_auto_refresh_minutes(),
+            export_directory=str(self.export_directory) if self.export_directory else None,
+            api_url=self.client.base_url,
+            alerts=alerts,
+        )
+
+    def save_preferences(self) -> None:
+        if getattr(self, "_applying_preferences", False):
+            return
+        try:
+            prefs = self._collect_preferences()
+            self.config_manager.save(prefs)
+        except Exception:
+            pass
+
     def _load_cache_on_startup(self) -> None:
         cached = self.client.load_cache()
         if not cached:
@@ -414,6 +480,7 @@ class ForexNewsApp(Window):
 
         prefix = status_prefix or "Filters applied"
         self.status_var.set(self._format_status(prefix))
+        self.save_preferences()
 
     def _populate_tree(self, events: Iterable[CalendarEvent]) -> None:
         self.tree.delete(*self.tree.get_children())
@@ -483,22 +550,94 @@ class ForexNewsApp(Window):
 
     def export_high_impact(self) -> None:
         try:
-            output_path = export_markdown(impacts=[ImpactLevel.HIGH])
+            export_dir = self.export_directory
+            output_path = None
+            if export_dir:
+                export_dir.mkdir(parents=True, exist_ok=True)
+                output_path = build_default_output_path(
+                    impacts=[ImpactLevel.HIGH], export_dir=export_dir
+                )
+            output_path = export_markdown(
+                impacts=[ImpactLevel.HIGH], output_path=output_path
+            )
         except CalendarAPIError as exc:
             Messagebox.show_error("Export failed", str(exc), parent=self)
             return
         Messagebox.show_info("Export complete", f"Saved markdown to\n{output_path}", parent=self)
 
-    def _show_settings_placeholder(self) -> None:
-        Messagebox.show_info(
-            "Settings",
-            "Settings dialog coming soon. Preferences will cover themes, alerts, and export options.",
-            parent=self,
+    def _show_settings_dialog(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Application Settings")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        api_var = tk.StringVar(value=self.client.base_url)
+        export_var = tk.StringVar(
+            value=str(self.export_directory) if self.export_directory else ""
         )
+
+        Frame(dialog, height=10).pack()
+
+        Label(dialog, text="Calendar API URL").pack(anchor="w", padx=16)
+        Entry(dialog, textvariable=api_var, width=48).pack(fill=X, padx=16)
+
+        Label(dialog, text="Export directory").pack(anchor="w", padx=16, pady=(12, 0))
+        export_frame = Frame(dialog)
+        export_frame.pack(fill=X, padx=16)
+        Entry(export_frame, textvariable=export_var, width=40).pack(side=LEFT, fill=X, expand=True)
+        Button(
+            export_frame,
+            text="Browse",
+            command=lambda: self._choose_export_directory(export_var),
+        ).pack(side=LEFT, padx=(8, 0))
+        Button(
+            export_frame,
+            text="Clear",
+            command=lambda: export_var.set(""),
+        ).pack(side=LEFT, padx=(4, 0))
+
+        button_frame = Frame(dialog)
+        button_frame.pack(fill=X, padx=16, pady=16)
+        Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=RIGHT)
+        Button(
+            button_frame,
+            text="Save",
+            bootstyle="primary",
+            command=lambda: self._apply_general_settings(dialog, api_var.get(), export_var.get()),
+        ).pack(side=RIGHT, padx=(0, 8))
+
+        dialog.wait_window()
+
+    def _choose_export_directory(self, var: tk.StringVar) -> None:
+        path = filedialog.askdirectory(title="Select export directory")
+        if path:
+            var.set(path)
+
+    def _apply_general_settings(self, dialog: tk.Toplevel, api_url: str, export_dir: str) -> None:
+        api_value = api_url.strip()
+        export_value = export_dir.strip()
+
+        if api_value:
+            self.client = CalendarClient(base_url=api_value)
+        else:
+            self.client = CalendarClient(base_url=DEFAULT_CALENDAR_URL)
+
+        if export_value:
+            path_obj = Path(export_value).expanduser()
+            path_obj.mkdir(parents=True, exist_ok=True)
+            self.export_directory = path_obj
+        else:
+            self.export_directory = None
+
+        self.save_preferences()
+        dialog.destroy()
+        self.status_var.set(self._format_status("Settings updated"))
 
     def _on_exit(self) -> None:
         self._cancel_auto_refresh()
         self.alert_manager.cancel_all()
+        self.save_preferences()
         self.destroy()
 
     def _latest_event_date(self, events: Iterable[CalendarEvent]) -> date | None:
@@ -560,6 +699,7 @@ class ForexNewsApp(Window):
             self._schedule_auto_refresh(immediate=True)
         else:
             self._cancel_auto_refresh()
+        self.save_preferences()
 
     def _schedule_auto_refresh(self, *, immediate: bool) -> None:
         self._cancel_auto_refresh()
@@ -593,21 +733,43 @@ class ForexNewsApp(Window):
 class AlertManager:
     """Manage scheduling and presentation of high-impact alerts."""
 
-    def __init__(self, app: ForexNewsApp) -> None:
+    def __init__(self, app: ForexNewsApp, prefs: AlertPreferences | None = None) -> None:
         self.app = app
-        self.enabled_var = tk.BooleanVar(master=app, value=True)
-        self.snooze_minutes = tk.IntVar(master=app, value=5)
+        prefs = prefs or AlertPreferences()
+        self.enabled_var = tk.BooleanVar(master=app, value=prefs.enabled)
+        self.snooze_minutes = tk.IntVar(master=app, value=prefs.snooze_minutes)
         self.reminder_offsets: dict[ImpactLevel, list[int]] = {
-            ImpactLevel.HIGH: [60, 30, 15, 5]
+            ImpactLevel.HIGH: list(prefs.offsets or [60, 30, 15, 5])
         }
-        self.custom_sound_path: Path | None = None
+        self.custom_sound_path: Path | None = (Path(prefs.sound_path) if prefs.sound_path else None)
         self._jobs: dict[tuple[str, str], str] = {}
+
+    def update_preferences(self, prefs: AlertPreferences) -> None:
+        self.enabled_var.set(prefs.enabled)
+        self.snooze_minutes.set(prefs.snooze_minutes)
+        self.reminder_offsets[ImpactLevel.HIGH] = list(prefs.offsets or [60, 30, 15, 5])
+        self.custom_sound_path = Path(prefs.sound_path) if prefs.sound_path else None
+        if self.enabled_var.get():
+            self.reload_events(self.app.all_events)
+        else:
+            self.cancel_all()
+
+    def get_preferences(self) -> AlertPreferences:
+        offsets = self.reminder_offsets.get(ImpactLevel.HIGH, [])
+        normalized = sorted({abs(value) for value in offsets}, reverse=True)
+        return AlertPreferences(
+            enabled=self.enabled_var.get(),
+            offsets=normalized or [60, 30, 15, 5],
+            snooze_minutes=max(1, self.snooze_minutes.get()),
+            sound_path=str(self.custom_sound_path) if self.custom_sound_path else None,
+        )
 
     def toggle(self) -> None:
         if self.enabled_var.get():
             self.reload_events(self.app.all_events)
         else:
             self.cancel_all()
+        self.app.save_preferences()
 
     def reload_events(self, events: Iterable[CalendarEvent]) -> None:
         self.cancel_all()
@@ -727,6 +889,7 @@ class AlertManager:
         self.snooze_minutes.set(max(1, abs(snooze_minutes)))
         dialog.destroy()
         self.reload_events(self.app.all_events)
+        self.app.save_preferences()
 
     def _choose_sound(self, sound_var: tk.StringVar) -> None:
         path = filedialog.askopenfilename(
@@ -851,3 +1014,4 @@ def run() -> None:
 
 
 __all__ = ["ForexNewsApp", "run"]
+

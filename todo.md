@@ -74,9 +74,9 @@
 - ✅ Stage, Commit and Push to repository for Task 8.
 
 ## 9. Configuration & Settings
-- [ ] Store user preferences (selected filters, auto-refresh interval, window geometry) in `config.json` under `data/`.
-- [ ] Load settings at startup and persist on exit.
-- [ ] Allow user to change export directory and API URL via settings dialog.
+- ✅ Store user preferences (selected filters, auto-refresh interval, window geometry) in `config.json` under `data/`.
+- ✅ Load settings at startup and persist on exit.
+- ✅ Allow user to change export directory and API URL via settings dialog.
 
 - [ ] Stage, Commit and Push to repository for Task 9.
 
