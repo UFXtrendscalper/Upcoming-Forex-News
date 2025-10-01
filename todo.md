@@ -9,30 +9,30 @@
 - ✅ Capture exact dependency versions in `requirements.txt`.
 
 ## 2. Data Acquisition & Validation
-- [ ] Implement `src/api_client.py` with function to download JSON from https://nfs.faireconomy.media/ff_calendar_thisweek.json using a configurable URL.
-- [ ] Add retry/backoff and timeout handling for network errors.
-- [ ] Persist last successful payload to `data/latest_calendar.json` for offline fallback.
-- [ ] Validate response schema; log/notify if unexpected fields or empty payload.
-- [ ] Normalize timestamp fields to Python `datetime` objects (UTC) and local timezone if helpful.
+- ✅ Implement `src/api_client.py` with function to download JSON from https://nfs.faireconomy.media/ff_calendar_thisweek.json using a configurable URL.
+- ✅ Add retry/backoff and timeout handling for network errors.
+- ✅ Persist last successful payload to `data/latest_calendar.json` for offline fallback.
+- ✅ Validate response schema; log/notify if unexpected fields or empty payload.
+- ✅ Normalize timestamp fields to Python `datetime` objects (UTC) and local timezone if helpful.
 
 ## 3. Data Modeling & Filtering
-- [ ] Define dataclasses or lightweight models in `src/models.py` for calendar events (date, time, currency, impact, event, actual, forecast, previous, etc.).
-- [ ] Implement helper functions for grouping events by calendar day and for filtering by impact (`High`, `Medium`, `Low`, `Holiday`).
-- [ ] Add free-text search/filter helpers (currency, keyword) to support UI enhancements.
-- [ ] Provide sorting utilities (e.g., time within day, impact severity).
+- ✅ Define dataclasses or lightweight models in `src/models.py` for calendar events (date, time, currency, impact, event, actual, forecast, previous, etc.).
+- ✅ Implement helper functions for grouping events by calendar day and for filtering by impact (`High`, `Medium`, `Low`, `Holiday`).
+- ✅ Add free-text search/filter helpers (currency, keyword) to support UI enhancements.
+- ✅ Provide sorting utilities (e.g., time within day, impact severity).
 
 ## 4. Markdown Export Pipeline
-- [ ] Create `src/export_markdown.py` to generate Markdown mirroring `Upcoming_News.md` structure.
-- [ ] Ensure export groups events by day with `## Day` headings and tables matching column order.
-- [ ] Restrict primary export to High impact events while preserving all columns; include "No scheduled events." when empty.
-- [ ] Save output to `exports/high_impact_news.md` with timestamped filename option.
-- [ ] Add CLI entry point (e.g., `python -m src.export_markdown --impact High`) for scripted runs.
+- ✅ Create `src/export_markdown.py` to generate Markdown mirroring `Upcoming_News.md` structure.
+- ✅ Ensure export groups events by day with `## Day` headings and tables matching column order.
+- ✅ Restrict primary export to High impact events while preserving all columns; include "No scheduled events." when empty.
+- ✅ Save output to `exports/high_impact_news.md` with timestamped filename option.
+- ✅ Add CLI entry point (e.g., `python -m src.export_markdown --impact High`) for scripted runs.
 
 ## 5. UI Architecture (Tkinter + ttkbootstrap)
-- [ ] Initialize main application in `src/app.py` using ttkbootstrap `Window(theme="cyborg")`.
-- [ ] Build layout with frames: header (controls), content (Treeview for calendar), footer (status bar).
-- [ ] Configure styles (fonts, row height, alternating row colors) matching theme aesthetics.
-- [ ] Add menu bar with actions: Refresh Data, Export High Impact Markdown, Settings, Exit.
+- ✅ Initialize main application in `src/app.py` using ttkbootstrap `Window(theme="cyborg")`.
+- ✅ Build layout with frames: header (controls), content (Treeview for calendar), footer (status bar).
+- ✅ Configure styles (fonts, row height, alternating row colors) matching theme aesthetics.
+- ✅ Add menu bar with actions: Refresh Data, Export High Impact Markdown, Settings, Exit.
 
 ## 6. Data Presentation Components
 - [ ] Populate Treeview with columns Time, Currency, Impact, Event, Actual, Forecast, Previous.
@@ -48,10 +48,13 @@
 - [ ] Add reset filters control.
 
 ## 8. Background Tasks & Refresh
+- ✅ Skip network refresh on launch when cached data covers current day; only fetch when cache stale.
 - [ ] Implement async-friendly refresh using `after()` loop or `threading` to avoid blocking UI during fetches.
 - [ ] Show progress indicator/spinner while downloading.
 - [ ] Cache latest dataset and diff against previous to highlight newly added/changed events.
 - [ ] Add auto-refresh interval setting (e.g., every 30 or 60 minutes) with toggle.
+- [ ] Schedule alert notifications for high-impact events with pop-up dialogs at 60/30/15/5 minute offsets and optional snooze controls.
+- [ ] Support user-provided `.wav` alert sounds and configurable reminder timings per impact level.
 
 ## 9. Configuration & Settings
 - [ ] Store user preferences (selected filters, auto-refresh interval, window geometry) in `config.json` under `data/`.
