@@ -88,8 +88,8 @@
 - ✅ Stage, Commit and Push to repository for Task 10.
 
 ## 11. Testing & Tooling
-- [ ] Add unit tests for data parsing, filtering, and markdown export using `pytest`.
-- [ ] Mock HTTP responses to ensure deterministic tests.
+- ✅ Add unit tests for data parsing, filtering, and markdown export using pytest.
+- ✅ Mock HTTP responses to ensure deterministic tests.
 - [ ] Include script `make_export.ps1` or `tasks.py` for running exports and linting.
 - [ ] Consider `ruff` or `flake8` for linting; add pre-commit hooks if desired.
 
