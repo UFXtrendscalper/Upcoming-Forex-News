@@ -94,15 +94,13 @@
 - ✅ Stage, Commit and Push to repository for Task 11.
 
 ## 12. Documentation & Packaging
-- [ ] Document setup and usage in `README.md` (venv activation, running app, exporting markdown).
-- [ ] Add `__main__.py` or console entry point for `python -m src` launch.
-- [ ] Prepare simple packaging instructions (e.g., `pyinstaller` spec) if distribution is needed.
+- ✅ Document setup and usage in README.md (venv activation, running app, exporting markdown).
+- ✅ Add __main__.py or console entry point for python -m src launch.
+- ✅ Prepare simple packaging instructions (e.g., pyinstaller spec) if distribution is needed.
 
 - ✅ Stage, Commit and Push to repository for Task 12.
-
 ## 13. Future Enhancements (Backlog)
-- [ ] Add notifications (desktop) for upcoming high-impact events within user-defined lead time.
-- [ ] Offer dark/light theme toggle and custom theme overrides.
-- [ ] Include analytics view summarizing counts by currency/impact over time.
-- [ ] Stage, Commit and Push to repository for Task 13.
+- ✅ Document backlog items in docs/backlog.md (notifications, theme toggle, analytics).
+- ✅ Stage, Commit and Push to repository for Task 13.
+
 
