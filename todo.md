@@ -95,7 +95,6 @@
 
 ## 12. Documentation & Packaging
 - [ ] Document setup and usage in `README.md` (venv activation, running app, exporting markdown).
-- [ ] Provide screenshots or GIF of the UI once implemented.
 - [ ] Add `__main__.py` or console entry point for `python -m src` launch.
 - [ ] Prepare simple packaging instructions (e.g., `pyinstaller` spec) if distribution is needed.
 
