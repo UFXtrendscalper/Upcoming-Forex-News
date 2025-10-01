@@ -1,11 +1,13 @@
-"""Tkinter + ttkbootstrap desktop application shell for forex news."""
+﻿"""Tkinter + ttkbootstrap desktop application shell for forex news."""
 
 from __future__ import annotations
 
+import platform
 import threading
 import tkinter as tk
-from datetime import date, datetime
-from tkinter import ttk
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from tkinter import filedialog, ttk
 from typing import Iterable, Sequence
 
 from ttkbootstrap import Window
@@ -89,6 +91,8 @@ class ForexNewsApp(Window):
         self._tree_event_map: dict[str, CalendarEvent] = {}
         self._auto_refresh_job: str | None = None
 
+        self.alert_manager = AlertManager(self)
+
         self._build_styles()
         self._build_menu()
         self._build_layout()
@@ -121,7 +125,7 @@ class ForexNewsApp(Window):
             label="Settings", command=self._show_settings_placeholder
         )
         tools_menu.add_command(
-            label="Alerts", command=self._show_alerts_placeholder
+            label="Alerts", command=self.alert_manager.show_settings_dialog
         )
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
@@ -167,6 +171,14 @@ class ForexNewsApp(Window):
             command=self.export_high_impact,
             bootstyle="warning",
         ).pack(side=LEFT, padx=(4, 0))
+
+        Checkbutton(
+            parent,
+            text="Alerts",
+            variable=self.alert_manager.enabled_var,
+            bootstyle="round-toggle",
+            command=self.alert_manager.toggle,
+        ).pack(side=LEFT, padx=(16, 4))
 
         Label(parent, text="Currency (comma-separated):").pack(side=LEFT, padx=(16, 6))
         currency_entry = Entry(parent, textvariable=self.currency_var, width=18)
@@ -312,6 +324,7 @@ class ForexNewsApp(Window):
             fetched_at=cached.fetched_at,
             from_cache=cached.from_cache,
         )
+        self.alert_manager.reload_events(self.all_events)
 
         if not self.latest_event_date or date.today() > self.latest_event_date:
             self.status_var.set(
@@ -371,6 +384,7 @@ class ForexNewsApp(Window):
             fetched_at=fetch_result.fetched_at,
             from_cache=fetch_result.from_cache,
         )
+        self.alert_manager.reload_events(self.all_events)
 
     def _handle_error(self, message: str) -> None:
         self._fetch_thread = None
@@ -482,15 +496,9 @@ class ForexNewsApp(Window):
             parent=self,
         )
 
-    def _show_alerts_placeholder(self) -> None:
-        Messagebox.show_info(
-            "Alerts",
-            "Alert scheduler UI will live here, including custom wav uploads and reminder cadence.",
-            parent=self,
-        )
-
     def _on_exit(self) -> None:
         self._cancel_auto_refresh()
+        self.alert_manager.cancel_all()
         self.destroy()
 
     def _latest_event_date(self, events: Iterable[CalendarEvent]) -> date | None:
@@ -580,6 +588,261 @@ class ForexNewsApp(Window):
             minutes = DEFAULT_AUTO_REFRESH_MINUTES
             self.auto_refresh_interval_var.set(str(minutes))
         return max(minutes, 0)
+
+
+class AlertManager:
+    """Manage scheduling and presentation of high-impact alerts."""
+
+    def __init__(self, app: ForexNewsApp) -> None:
+        self.app = app
+        self.enabled_var = tk.BooleanVar(master=app, value=True)
+        self.snooze_minutes = tk.IntVar(master=app, value=5)
+        self.reminder_offsets: dict[ImpactLevel, list[int]] = {
+            ImpactLevel.HIGH: [60, 30, 15, 5]
+        }
+        self.custom_sound_path: Path | None = None
+        self._jobs: dict[tuple[str, str], str] = {}
+
+    def toggle(self) -> None:
+        if self.enabled_var.get():
+            self.reload_events(self.app.all_events)
+        else:
+            self.cancel_all()
+
+    def reload_events(self, events: Iterable[CalendarEvent]) -> None:
+        self.cancel_all()
+        if not self.enabled_var.get():
+            return
+        for event in events:
+            offsets = self.reminder_offsets.get(event.impact)
+            if not offsets:
+                continue
+            for offset in offsets:
+                self._schedule_event(event, offset)
+
+    def cancel_all(self) -> None:
+        for job_id in self._jobs.values():
+            try:
+                self.app.after_cancel(job_id)
+            except Exception:
+                pass
+        self._jobs.clear()
+
+    def show_settings_dialog(self) -> None:
+        dialog = tk.Toplevel(self.app)
+        dialog.title("Alert Settings")
+        dialog.transient(self.app)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        offsets_var = tk.StringVar(
+            value=", ".join(str(value) for value in self.reminder_offsets[ImpactLevel.HIGH])
+        )
+        sound_var = tk.StringVar(
+            value=str(self.custom_sound_path) if self.custom_sound_path else ""
+        )
+        snooze_var = tk.StringVar(value=str(self.snooze_minutes.get()))
+
+        Frame(dialog, height=10).pack()
+        Label(dialog, text="High impact reminder offsets (minutes)").pack(anchor="w", padx=16)
+        Entry(dialog, textvariable=offsets_var, width=32).pack(fill=X, padx=16)
+
+        Label(dialog, text="Snooze duration (minutes)").pack(anchor="w", padx=16, pady=(12, 0))
+        Entry(dialog, textvariable=snooze_var, width=12).pack(fill=X, padx=16)
+
+        sound_frame = Frame(dialog)
+        sound_frame.pack(fill=X, padx=16, pady=(12, 0))
+        Label(sound_frame, text="Alert sound (.wav)").pack(anchor="w")
+        sound_entry = Entry(sound_frame, textvariable=sound_var, width=40)
+        sound_entry.pack(side=LEFT, fill=X, expand=True, pady=(4, 0))
+        Button(
+            sound_frame,
+            text="Browse",
+            command=lambda: self._choose_sound(sound_var),
+        ).pack(side=LEFT, padx=(8, 0))
+        Button(
+            sound_frame,
+            text="Clear",
+            command=lambda: sound_var.set(""),
+        ).pack(side=LEFT, padx=(4, 0))
+
+        button_frame = Frame(dialog)
+        button_frame.pack(fill=X, padx=16, pady=16)
+        Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=RIGHT)
+        Button(
+            button_frame,
+            text="Save",
+            bootstyle="primary",
+            command=lambda: self._apply_settings(dialog, offsets_var, snooze_var, sound_var),
+        ).pack(side=RIGHT, padx=(0, 8))
+
+        dialog.wait_window()
+
+    def _apply_settings(
+        self,
+        dialog: tk.Toplevel,
+        offsets_var: tk.StringVar,
+        snooze_var: tk.StringVar,
+        sound_var: tk.StringVar,
+    ) -> None:
+        try:
+            offsets = [
+                int(value)
+                for value in offsets_var.get().split(",")
+                if value.strip()
+            ]
+        except ValueError:
+            Messagebox.show_error("Invalid offsets", "Offsets must be integers.", parent=self.app)
+            return
+
+        if not offsets:
+            Messagebox.show_error("No offsets", "Provide at least one offset.", parent=self.app)
+            return
+
+        try:
+            snooze_minutes = int(snooze_var.get())
+        except ValueError:
+            Messagebox.show_error(
+                "Invalid snooze",
+                "Snooze duration must be an integer.",
+                parent=self.app,
+            )
+            return
+
+        path_value = sound_var.get().strip()
+        if path_value:
+            candidate = Path(path_value)
+            if not candidate.exists() or candidate.suffix.lower() != ".wav":
+                Messagebox.show_error(
+                    "Invalid sound",
+                    "Select an existing .wav file.",
+                    parent=self.app,
+                )
+                return
+            self.custom_sound_path = candidate
+        else:
+            self.custom_sound_path = None
+
+        self.reminder_offsets[ImpactLevel.HIGH] = sorted({abs(offset) for offset in offsets}, reverse=True)
+        self.snooze_minutes.set(max(1, abs(snooze_minutes)))
+        dialog.destroy()
+        self.reload_events(self.app.all_events)
+
+    def _choose_sound(self, sound_var: tk.StringVar) -> None:
+        path = filedialog.askopenfilename(
+            title="Select alert sound",
+            filetypes=[("WAV files", "*.wav"), ("All files", "*.*")],
+        )
+        if path:
+            sound_var.set(path)
+
+    def _schedule_event(
+        self,
+        event: CalendarEvent,
+        offset_minutes: int,
+        *,
+        label: str | None = None,
+        absolute_time: datetime | None = None,
+    ) -> None:
+        if label is None:
+            label = f"offset-{offset_minutes}"
+
+        if absolute_time is None:
+            reminder_time = event.datetime_local - timedelta(minutes=offset_minutes)
+        else:
+            reminder_time = absolute_time
+
+        tz_now = datetime.now(event.datetime_local.tzinfo or datetime.now().astimezone().tzinfo)
+        delay_seconds = (reminder_time - tz_now).total_seconds()
+        if delay_seconds <= 1:
+            return
+
+        job_id = self.app.after(
+            int(delay_seconds * 1000),
+            lambda e=event, lbl=label: self._trigger_alert(e, lbl),
+        )
+        self._jobs[(event.uid, label)] = job_id
+
+    def _schedule_snooze(self, event: CalendarEvent) -> None:
+        minutes = max(1, self.snooze_minutes.get())
+        tz_now = datetime.now(event.datetime_local.tzinfo or datetime.now().astimezone().tzinfo)
+        label = f"snooze-{datetime.now().timestamp()}"
+        reminder_time = tz_now + timedelta(minutes=minutes)
+        self._schedule_event(event, minutes, label=label, absolute_time=reminder_time)
+
+    def _trigger_alert(self, event: CalendarEvent, label: str) -> None:
+        job = self._jobs.pop((event.uid, label), None)
+        if job is None or not self.enabled_var.get():
+            return
+
+        self._play_sound()
+        self._show_alert_popup(event)
+
+    def _show_alert_popup(self, event: CalendarEvent) -> None:
+        popup = tk.Toplevel(self.app)
+        popup.title("High Impact Reminder")
+        popup.transient(self.app)
+        popup.grab_set()
+        popup.resizable(False, False)
+        popup.attributes("-topmost", True)
+
+        Frame(popup, height=10).pack()
+        Label(
+            popup,
+            text=f"{event.title} ({event.currency})",
+            font=("Segoe UI", 12, "bold"),
+        ).pack(padx=16, pady=(0, 6))
+
+        local_time = event.datetime_local.strftime("%Y-%m-%d %I:%M %p %Z").lstrip("0")
+        Label(popup, text=f"Scheduled for {local_time}").pack(padx=16)
+
+        Frame(popup, height=12).pack()
+        button_frame = Frame(popup)
+        button_frame.pack(fill=X, padx=16, pady=(0, 16))
+
+        Button(
+            button_frame,
+            text="Snooze",
+            command=lambda: self._on_snooze(event, popup),
+            bootstyle="secondary",
+        ).pack(side=LEFT)
+
+        Button(
+            button_frame,
+            text="Dismiss",
+            command=popup.destroy,
+            bootstyle="primary",
+        ).pack(side=RIGHT)
+
+        # After forcing topmost, allow focus to return to app later
+        popup.after(3000, lambda: popup.attributes("-topmost", False))
+
+    def _on_snooze(self, event: CalendarEvent, popup: tk.Toplevel) -> None:
+        popup.destroy()
+        self._schedule_snooze(event)
+
+    def _play_sound(self) -> None:
+        if self.custom_sound_path:
+            try:
+                if platform.system() == "Windows":
+                    import winsound
+
+                    winsound.PlaySound(
+                        str(self.custom_sound_path),
+                        winsound.SND_FILENAME | winsound.SND_ASYNC,
+                    )
+                    return
+            except Exception:
+                pass
+        try:
+            if platform.system() == "Windows":
+                import winsound
+
+                winsound.MessageBeep()
+            else:
+                self.app.bell()
+        except Exception:
+            pass
 
 
 def run() -> None:

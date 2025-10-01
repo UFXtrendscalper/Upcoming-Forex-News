@@ -68,10 +68,10 @@
 - ✅ Show progress indicator/spinner while downloading.
 - ✅ Cache latest dataset and diff against previous to highlight newly added/changed events.
 - ✅ Add auto-refresh interval setting (e.g., every 30 or 60 minutes) with toggle.
-- [ ] Schedule alert notifications for high-impact events with pop-up dialogs at 60/30/15/5 minute offsets and optional snooze controls.
-- [ ] Support user-provided `.wav` alert sounds and configurable reminder timings per impact level.
+- ✅ Schedule alert notifications for high-impact events with pop-up dialogs at 60/30/15/5 minute offsets and optional snooze controls.
+- ✅ Support user-provided `.wav` alert sounds and configurable reminder timings per impact level.
 
-- ✅ Stage, Commit and Push to repository for Task 8.
+- [ ] Stage, Commit and Push to repository for Task 8.
 
 ## 9. Configuration & Settings
 - [ ] Store user preferences (selected filters, auto-refresh interval, window geometry) in `config.json` under `data/`.
