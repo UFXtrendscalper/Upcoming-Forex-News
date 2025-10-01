@@ -8,7 +8,7 @@
 - ✅ Install dependencies: `ttkbootstrap`, `requests` (or `httpx`), `python-dateutil`, and `pandas` (optional for data shaping).
 - ✅ Capture exact dependency versions in `requirements.txt`.
 
-- ✅ Stage and commit changes for Task 1.
+- ✅ Stage, Commit and Push to repository for Task 1.
 
 ## 2. Data Acquisition & Validation
 - ✅ Implement `src/api_client.py` with function to download JSON from https://nfs.faireconomy.media/ff_calendar_thisweek.json using a configurable URL.
@@ -17,7 +17,7 @@
 - ✅ Validate response schema; log/notify if unexpected fields or empty payload.
 - ✅ Normalize timestamp fields to Python `datetime` objects (UTC) and local timezone if helpful.
 
-- ✅ Stage and commit changes for Task 2.
+- ✅ Stage, Commit and Push to repository for Task 2.
 
 ## 3. Data Modeling & Filtering
 - ✅ Define dataclasses or lightweight models in `src/models.py` for calendar events (date, time, currency, impact, event, actual, forecast, previous, etc.).
@@ -25,7 +25,7 @@
 - ✅ Add free-text search/filter helpers (currency, keyword) to support UI enhancements.
 - ✅ Provide sorting utilities (e.g., time within day, impact severity).
 
-- ✅ Stage and commit changes for Task 3.
+- ✅ Stage, Commit and Push to repository for Task 3.
 
 ## 4. Markdown Export Pipeline
 - ✅ Create `src/export_markdown.py` to generate Markdown mirroring `Upcoming_News.md` structure.
@@ -34,16 +34,16 @@
 - ✅ Save output to `exports/high_impact_news.md` with timestamped filename option.
 - ✅ Add CLI entry point (e.g., `python -m src.export_markdown --impact High`) for scripted runs.
 
-- ✅ Stage and commit changes for Task 4.
+- ✅ Stage, Commit and Push to repository for Task 4.
 
 ## 5. UI Architecture (Tkinter + ttkbootstrap)
 - ✅ Initialize main application in `src/app.py` using ttkbootstrap `Window(theme="cyborg")`.
-- [ ] Stage and commit changes for this task.
+- [ ] Stage, Commit and Push to repository for this task.
 - ✅ Build layout with frames: header (controls), content (Treeview for calendar), footer (status bar).
 - ✅ Configure styles (fonts, row height, alternating row colors) matching theme aesthetics.
 - ✅ Add menu bar with actions: Refresh Data, Export High Impact Markdown, Settings, Exit.
 
-- ✅ Stage and commit changes for Task 5.
+- ✅ Stage, Commit and Push to repository for Task 5.
 
 ## 6. Data Presentation Components
 - ✅ Populate Treeview with columns Time, Currency, Impact, Event, Actual, Forecast, Previous.
@@ -51,16 +51,16 @@
 - ✅ Provide detail panel or modal showing extended description on double-click.
 - ✅ Display last updated timestamp and source URL in status bar.
 
-- ✅ Stage and commit changes for Task 6.
+- ✅ Stage, Commit and Push to repository for Task 6.
 
 ## 7. Filtering & User Controls
-- [ ] Add impact filter buttons/checklist (High/Medium/Low/Holiday) with toggle state.
-- [ ] Include currency dropdown and keyword search entry; filter Treeview in real-time.
-- [ ] Supply date range selector (current week by default) with navigation to previous/next week if API supports.
-- [ ] Offer quick "High Impact Only" shortcut button and export trigger.
-- [ ] Add reset filters control.
+- ✅ Add impact filter buttons/checklist (High/Medium/Low/Holiday) with toggle state.
+- ✅ Include currency dropdown and keyword search entry; filter Treeview in real-time.
+- ✅ Supply date range selector (current week by default) with navigation to previous/next week if API supports.
+- ✅ Offer quick "High Impact Only" shortcut button and export trigger.
+- ✅ Add reset filters control.
 
-- [ ] Stage and commit changes for Task 7.
+- [ ] Stage, Commit and Push to repository for Task 7.
 
 ## 8. Background Tasks & Refresh
 - ✅ Skip network refresh on launch when cached data covers current day; only fetch when cache stale.
@@ -71,21 +71,21 @@
 - [ ] Schedule alert notifications for high-impact events with pop-up dialogs at 60/30/15/5 minute offsets and optional snooze controls.
 - [ ] Support user-provided `.wav` alert sounds and configurable reminder timings per impact level.
 
-- [ ] Stage and commit changes for Task 8.
+- [ ] Stage, Commit and Push to repository for Task 8.
 
 ## 9. Configuration & Settings
 - [ ] Store user preferences (selected filters, auto-refresh interval, window geometry) in `config.json` under `data/`.
 - [ ] Load settings at startup and persist on exit.
 - [ ] Allow user to change export directory and API URL via settings dialog.
 
-- [ ] Stage and commit changes for Task 9.
+- [ ] Stage, Commit and Push to repository for Task 9.
 
 ## 10. Logging & Error Handling
 - [ ] Configure logging to file (`logs/app.log`) with rotation.
 - [ ] Display non-blocking toast/dialog for errors with option to retry fetch.
 - [ ] Gracefully handle network failures by prompting to use cached data.
 
-- [ ] Stage and commit changes for Task 10.
+- [ ] Stage, Commit and Push to repository for Task 10.
 
 ## 11. Testing & Tooling
 - [ ] Add unit tests for data parsing, filtering, and markdown export using `pytest`.
@@ -93,7 +93,7 @@
 - [ ] Include script `make_export.ps1` or `tasks.py` for running exports and linting.
 - [ ] Consider `ruff` or `flake8` for linting; add pre-commit hooks if desired.
 
-- [ ] Stage and commit changes for Task 11.
+- [ ] Stage, Commit and Push to repository for Task 11.
 
 ## 12. Documentation & Packaging
 - [ ] Document setup and usage in `README.md` (venv activation, running app, exporting markdown).
@@ -101,13 +101,11 @@
 - [ ] Add `__main__.py` or console entry point for `python -m src` launch.
 - [ ] Prepare simple packaging instructions (e.g., `pyinstaller` spec) if distribution is needed.
 
-- [ ] Stage and commit changes for Task 12.
+- [ ] Stage, Commit and Push to repository for Task 12.
 
 ## 13. Future Enhancements (Backlog)
-- [ ] Integrate additional data sources (economic news sentiment, historical outcomes).
 - [ ] Add notifications (desktop or email) for upcoming high-impact events within user-defined lead time.
-- [ ] Provide CSV export and calendar (.ics) integration.
 - [ ] Offer dark/light theme toggle and custom theme overrides.
 - [ ] Include analytics view summarizing counts by currency/impact over time.
-- [ ] Stage and commit changes for Task 13.
+- [ ] Stage, Commit and Push to repository for Task 13.
 

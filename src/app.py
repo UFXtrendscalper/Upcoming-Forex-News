@@ -6,7 +6,7 @@ import threading
 import tkinter as tk
 from datetime import date, datetime
 from tkinter import ttk
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from ttkbootstrap import Window
 from ttkbootstrap.constants import BOTH, END, LEFT, RIGHT, X
@@ -37,6 +37,12 @@ TREE_COLUMNS = (
 )
 
 DEFAULT_GEOMETRY = "1200x760"
+DEFAULT_IMPACT_ORDER = (
+    ImpactLevel.HIGH,
+    ImpactLevel.MEDIUM,
+    ImpactLevel.LOW,
+    ImpactLevel.HOLIDAY,
+)
 
 
 class ForexNewsApp(Window):
@@ -59,11 +65,9 @@ class ForexNewsApp(Window):
         self.last_fetch_source: str | None = None
         self.last_fetch_timestamp: datetime | None = None
 
-        self.impact_filters = {
-            ImpactLevel.HIGH: tk.BooleanVar(value=True),
-            ImpactLevel.MEDIUM: tk.BooleanVar(value=False),
-            ImpactLevel.LOW: tk.BooleanVar(value=False),
-            ImpactLevel.HOLIDAY: tk.BooleanVar(value=False),
+        self.impact_filters: dict[ImpactLevel, tk.BooleanVar] = {
+            impact: tk.BooleanVar(value=(impact is ImpactLevel.HIGH))
+            for impact in DEFAULT_IMPACT_ORDER
         }
         self.currency_var = tk.StringVar()
         self.search_var = tk.StringVar()
@@ -129,18 +133,32 @@ class ForexNewsApp(Window):
         self._build_footer(footer)
 
     def _build_header(self, parent: Frame) -> None:
-        Label(parent, text="Impacts:").pack(side=LEFT, padx=(0, 6))
-        for impact, var in self.impact_filters.items():
+        Label(parent, text="Impact filters:").pack(side=LEFT, padx=(0, 6))
+        for impact in DEFAULT_IMPACT_ORDER:
             Checkbutton(
                 parent,
                 text=impact.value,
-                variable=var,
+                variable=self.impact_filters[impact],
                 bootstyle="toolbutton",
                 command=self.apply_filters,
             ).pack(side=LEFT, padx=2)
 
-        Label(parent, text="Currency:").pack(side=LEFT, padx=(16, 6))
-        currency_entry = Entry(parent, textvariable=self.currency_var, width=10)
+        Button(
+            parent,
+            text="High Impact Only",
+            command=self._apply_high_impact_shortcut,
+            bootstyle="secondary",
+        ).pack(side=LEFT, padx=(12, 0))
+
+        Button(
+            parent,
+            text="Export High Impact",
+            command=self.export_high_impact,
+            bootstyle="warning",
+        ).pack(side=LEFT, padx=(4, 0))
+
+        Label(parent, text="Currency (comma-separated):").pack(side=LEFT, padx=(16, 6))
+        currency_entry = Entry(parent, textvariable=self.currency_var, width=18)
         currency_entry.pack(side=LEFT)
         currency_entry.bind("<Return>", lambda _event: self.apply_filters())
 
@@ -297,12 +315,17 @@ class ForexNewsApp(Window):
 
     def apply_filters(self, *, status_prefix: str | None = None) -> None:
         events = list(self.all_events)
-        selected_impacts = [impact for impact, var in self.impact_filters.items() if var.get()]
-        if selected_impacts:
-            events = filter_by_impact(events, selected_impacts)
-        currency_text = self.currency_var.get().strip().upper()
-        if currency_text:
-            events = filter_by_currency(events, [currency_text])
+
+        active_impacts = [
+            impact for impact, var in self.impact_filters.items() if var.get()
+        ]
+        if active_impacts and len(active_impacts) < len(self.impact_filters):
+            events = filter_by_impact(events, active_impacts)
+
+        currencies = self._parse_currencies(self.currency_var.get())
+        if currencies:
+            events = filter_by_currency(events, currencies)
+
         query = self.search_var.get().strip()
         if query:
             events = search_events(events, query)
@@ -362,12 +385,18 @@ class ForexNewsApp(Window):
         )
 
     def _reset_filters(self) -> None:
-        for var in self.impact_filters.values():
-            var.set(False)
-        self.impact_filters[ImpactLevel.HIGH].set(True)
+        for impact, var in self.impact_filters.items():
+            var.set(impact is ImpactLevel.HIGH)
         self.currency_var.set("")
         self.search_var.set("")
-        self.apply_filters()
+        self.apply_filters(status_prefix="Filters reset")
+
+    def _apply_high_impact_shortcut(self) -> None:
+        for impact, var in self.impact_filters.items():
+            var.set(impact is ImpactLevel.HIGH)
+        self.currency_var.set("")
+        self.search_var.set("")
+        self.apply_filters(status_prefix="High impact spotlight")
 
     def export_high_impact(self) -> None:
         try:
@@ -437,6 +466,10 @@ class ForexNewsApp(Window):
             f"Previous: {event.previous or 'n/a'}",
         ]
         return "\n".join(lines)
+
+    def _parse_currencies(self, raw: str) -> Sequence[str]:
+        tokens = [token.strip().upper() for token in raw.split(",")]
+        return [token for token in tokens if token]
 
 
 def run() -> None:
