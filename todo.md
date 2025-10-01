@@ -90,8 +90,6 @@
 ## 11. Testing & Tooling
 - ✅ Add unit tests for data parsing, filtering, and markdown export using pytest.
 - ✅ Mock HTTP responses to ensure deterministic tests.
-- [ ] Include script `make_export.ps1` or `tasks.py` for running exports and linting.
-- [ ] Consider `ruff` or `flake8` for linting; add pre-commit hooks if desired.
 
 - ✅ Stage, Commit and Push to repository for Task 11.
 
@@ -104,7 +102,7 @@
 - [ ] Stage, Commit and Push to repository for Task 12.
 
 ## 13. Future Enhancements (Backlog)
-- [ ] Add notifications (desktop or email) for upcoming high-impact events within user-defined lead time.
+- [ ] Add notifications (desktop) for upcoming high-impact events within user-defined lead time.
 - [ ] Offer dark/light theme toggle and custom theme overrides.
 - [ ] Include analytics view summarizing counts by currency/impact over time.
 - [ ] Stage, Commit and Push to repository for Task 13.
