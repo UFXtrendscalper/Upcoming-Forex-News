@@ -98,7 +98,7 @@
 - [ ] Add `__main__.py` or console entry point for `python -m src` launch.
 - [ ] Prepare simple packaging instructions (e.g., `pyinstaller` spec) if distribution is needed.
 
-- [ ] Stage, Commit and Push to repository for Task 12.
+- ✅ Stage, Commit and Push to repository for Task 12.
 
 ## 13. Future Enhancements (Backlog)
 - [ ] Add notifications (desktop) for upcoming high-impact events within user-defined lead time.
