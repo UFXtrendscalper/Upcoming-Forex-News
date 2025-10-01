@@ -81,9 +81,9 @@
 - ✅ Stage, Commit and Push to repository for Task 9.
 
 ## 10. Logging & Error Handling
-- [ ] Configure logging to file (`logs/app.log`) with rotation.
-- [ ] Display non-blocking toast/dialog for errors with option to retry fetch.
-- [ ] Gracefully handle network failures by prompting to use cached data.
+- ✅ Configure logging to file (`logs/app.log`) with rotation.
+- ✅ Display non-blocking toast/dialog for errors with option to retry fetch.
+- ✅ Gracefully handle network failures by prompting to use cached data.
 
 - [ ] Stage, Commit and Push to repository for Task 10.
 

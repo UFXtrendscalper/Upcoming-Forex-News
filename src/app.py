@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import platform
 import threading
 import tkinter as tk
@@ -15,9 +17,15 @@ from ttkbootstrap.constants import BOTH, END, LEFT, RIGHT, X
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.widgets import Button, Checkbutton, Entry, Frame, Label
 
-from .api_client import CalendarAPIError, CalendarClient, DEFAULT_CALENDAR_URL
+from .api_client import (
+    CalendarAPIError,
+    CalendarClient,
+    DEFAULT_CALENDAR_URL,
+    CalendarFetchResult,
+)
 from .export_markdown import export_markdown, build_default_output_path
 from .config import ConfigManager, AppPreferences, AlertPreferences
+from .logging_setup import configure_logging
 from .models import (
     CalendarEvent,
     ImpactLevel,
@@ -49,6 +57,8 @@ DEFAULT_IMPACT_ORDER = (
 DEFAULT_AUTO_REFRESH_MINUTES = 30
 AUTO_REFRESH_CHOICES = ("15", "30", "45", "60")
 
+
+configure_logging()
 
 class ForexNewsApp(Window):
     """Main application window."""
@@ -95,6 +105,7 @@ class ForexNewsApp(Window):
         self._tree_event_map: dict[str, CalendarEvent] = {}
         self._auto_refresh_job: str | None = None
         self.export_directory: Path | None = None
+        self._error_prompt: tk.Toplevel | None = None
 
         self.alert_manager = AlertManager(self, preferences.alerts)
 
@@ -390,6 +401,7 @@ class ForexNewsApp(Window):
             fetched_at=cached.fetched_at,
             from_cache=cached.from_cache,
         )
+        logging.info('Loaded cached calendar from %s', cached.source)
         self.alert_manager.reload_events(self.all_events)
 
         if not self.latest_event_date or date.today() > self.latest_event_date:
@@ -450,13 +462,20 @@ class ForexNewsApp(Window):
             fetched_at=fetch_result.fetched_at,
             from_cache=fetch_result.from_cache,
         )
+        logging.info('Fetched %s events from %s', len(events), fetch_result.source)
         self.alert_manager.reload_events(self.all_events)
 
     def _handle_error(self, message: str) -> None:
         self._fetch_thread = None
         self._show_spinner(False)
-        Messagebox.show_error("Unable to refresh data", message, parent=self)
+        logging.error("Data refresh failed: %s", message)
         self.status_var.set("Failed to refresh data")
+        cached_result: CalendarFetchResult | None = None
+        try:
+            cached_result = self.client.load_cache()
+        except Exception as exc:
+            logging.error("Unable to load cached data after error: %s", exc)
+        self._show_error_prompt(message, cached_result)
 
     def apply_filters(self, *, status_prefix: str | None = None) -> None:
         events = list(self.all_events)
@@ -540,6 +559,75 @@ class ForexNewsApp(Window):
         self.currency_var.set("")
         self.search_var.set("")
         self.apply_filters(status_prefix="Filters reset")
+
+    def _show_error_prompt(self, message: str, cached_result: CalendarFetchResult | None) -> None:
+        existing = getattr(self, '_error_prompt', None)
+        if existing is not None:
+            try:
+                existing.destroy()
+            except Exception:
+                pass
+        prompt = tk.Toplevel(self)
+        self._error_prompt = prompt
+        prompt.title('Refresh Failed')
+        prompt.resizable(False, False)
+        try:
+            prompt.geometry(f'+{self.winfo_rootx() + 60}+{self.winfo_rooty() + 60}')
+        except Exception:
+            pass
+
+        Label(prompt, text='Unable to refresh data.', font=('Segoe UI', 11, 'bold')).pack(padx=16, pady=(12, 4))
+        Label(prompt, text=message, wraplength=360, justify='left').pack(padx=16)
+
+        button_frame = Frame(prompt)
+        button_frame.pack(fill=X, padx=16, pady=(12, 16))
+
+        def close_prompt() -> None:
+            try:
+                prompt.destroy()
+            finally:
+                self._error_prompt = None
+
+        Button(
+            button_frame,
+            text='Retry',
+            bootstyle='primary',
+            command=lambda: (close_prompt(), self.refresh_data(force=True)),
+        ).pack(side=RIGHT, padx=(8, 0))
+
+        if cached_result and cached_result.events:
+            Button(
+                button_frame,
+                text='Use Cached',
+                bootstyle='secondary',
+                command=lambda: (close_prompt(), self._apply_cached_result(cached_result)),
+            ).pack(side=RIGHT, padx=(8, 0))
+
+        Button(button_frame, text='Dismiss', command=close_prompt).pack(side=RIGHT)
+
+    def _apply_cached_result(self, result: CalendarFetchResult) -> None:
+        try:
+            events = sort_events(build_events(result.events), by_impact_first=False)
+        except Exception as exc:
+            logging.error('Failed to rebuild cached events: %s', exc)
+            return
+        if not events:
+            logging.warning('Cached dataset was empty, nothing to apply')
+            return
+
+        self.previous_events_by_uid = {event.uid: event for event in events}
+        self._new_event_uids.clear()
+        self._changed_event_uids.clear()
+        self.all_events = events
+        self.latest_event_date = self._latest_event_date(events)
+        self.apply_filters(status_prefix='Loaded cached calendar after failure')
+        self._update_last_updated(
+            source=result.source,
+            fetched_at=result.fetched_at,
+            from_cache=True,
+        )
+        self.alert_manager.reload_events(events)
+        logging.info('Loaded cached calendar from %s', result.source)
 
     def _apply_high_impact_shortcut(self) -> None:
         for impact, var in self.impact_filters.items():
@@ -630,9 +718,15 @@ class ForexNewsApp(Window):
         else:
             self.export_directory = None
 
+        self.previous_events_by_uid = {}
+        self._new_event_uids.clear()
+        self._changed_event_uids.clear()
+        self.latest_event_date = None
         self.save_preferences()
         dialog.destroy()
         self.status_var.set(self._format_status("Settings updated"))
+        logging.info('Settings updated: api_url=%s, export_dir=%s', self.client.base_url, self.export_directory)
+        self.refresh_data(force=True)
 
     def _on_exit(self) -> None:
         self._cancel_auto_refresh()
