@@ -93,7 +93,7 @@
 - [ ] Include script `make_export.ps1` or `tasks.py` for running exports and linting.
 - [ ] Consider `ruff` or `flake8` for linting; add pre-commit hooks if desired.
 
-- [ ] Stage, Commit and Push to repository for Task 11.
+- ✅ Stage, Commit and Push to repository for Task 11.
 
 ## 12. Documentation & Packaging
 - [ ] Document setup and usage in `README.md` (venv activation, running app, exporting markdown).
