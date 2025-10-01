@@ -60,7 +60,7 @@
 - ✅ Offer quick "High Impact Only" shortcut button and export trigger.
 - ✅ Add reset filters control.
 
-- [ ] Stage, Commit and Push to repository for Task 7.
+- ✅ Stage, Commit and Push to repository for Task 7.
 
 ## 8. Background Tasks & Refresh
 - ✅ Skip network refresh on launch when cached data covers current day; only fetch when cache stale.
