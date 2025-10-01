@@ -85,7 +85,7 @@
 - ✅ Display non-blocking toast/dialog for errors with option to retry fetch.
 - ✅ Gracefully handle network failures by prompting to use cached data.
 
-- [ ] Stage, Commit and Push to repository for Task 10.
+- ✅ Stage, Commit and Push to repository for Task 10.
 
 ## 11. Testing & Tooling
 - [ ] Add unit tests for data parsing, filtering, and markdown export using `pytest`.
