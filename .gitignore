@@ -1,0 +1,13 @@
+# Python
+env/
+__pycache__/
+*.pyc
+
+# App artifacts
+exports/
+data/latest_calendar.json
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
