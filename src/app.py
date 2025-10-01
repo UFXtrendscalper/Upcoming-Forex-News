@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import tkinter as tk
-from datetime import date
+from datetime import date, datetime
 from tkinter import ttk
 from typing import Iterable
 
@@ -56,6 +56,8 @@ class ForexNewsApp(Window):
         self.all_events: list[CalendarEvent] = []
         self.filtered_events: list[CalendarEvent] = []
         self.latest_event_date: date | None = None
+        self.last_fetch_source: str | None = None
+        self.last_fetch_timestamp: datetime | None = None
 
         self.impact_filters = {
             ImpactLevel.HIGH: tk.BooleanVar(value=True),
@@ -66,6 +68,11 @@ class ForexNewsApp(Window):
         self.currency_var = tk.StringVar()
         self.search_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Ready")
+        self.last_updated_var = tk.StringVar(
+            value="Last updated: waiting for data (no cache loaded)"
+        )
+
+        self._tree_event_map: dict[str, CalendarEvent] = {}
 
         self._build_styles()
         self._build_menu()
@@ -204,31 +211,38 @@ class ForexNewsApp(Window):
         parent.grid_rowconfigure(0, weight=1)
         parent.grid_columnconfigure(0, weight=1)
 
+        self.tree.bind("<Double-1>", self._on_tree_double_click)
+
     def _build_footer(self, parent: Frame) -> None:
         Label(parent, textvariable=self.status_var, anchor="w").pack(fill=X)
+        Label(parent, textvariable=self.last_updated_var, anchor="w").pack(fill=X)
 
     def _load_cache_on_startup(self) -> None:
         cached = self.client.load_cache()
         if not cached:
             self.status_var.set("No cached data found; fetching latest calendar...")
+            self.last_updated_var.set(
+                "Last updated: awaiting first download (no cache detected)"
+            )
             self.after(200, lambda: self.refresh_data(force=True))
             return
 
         events = sort_events(build_events(cached.events), by_impact_first=False)
         if not events:
             self.status_var.set("Cached data empty; fetching latest calendar...")
+            self.last_updated_var.set(
+                "Last updated: awaiting first download (empty cache)"
+            )
             self.after(200, lambda: self.refresh_data(force=True))
             return
 
         self.all_events = events
         self.latest_event_date = self._latest_event_date(events)
-        fetched_at = (
-            cached.fetched_at.astimezone().strftime("%Y-%m-%d %H:%M %Z")
-            if cached.fetched_at
-            else "unknown"
-        )
-        self.apply_filters(
-            status_prefix=f"Loaded cached calendar ({fetched_at})"
+        self.apply_filters(status_prefix="Loaded cached calendar")
+        self._update_last_updated(
+            source=cached.source,
+            fetched_at=cached.fetched_at,
+            from_cache=cached.from_cache,
         )
 
         if not self.latest_event_date or date.today() > self.latest_event_date:
@@ -246,9 +260,7 @@ class ForexNewsApp(Window):
             and self.latest_event_date is not None
             and date.today() <= self.latest_event_date
         ):
-            self.status_var.set(
-                self._format_status("Cached calendar already up to date")
-            )
+            self.apply_filters(status_prefix="Cached calendar already up to date")
             return
 
         self.status_var.set("Refreshing data...")
@@ -258,17 +270,25 @@ class ForexNewsApp(Window):
     def _fetch_data(self) -> None:
         try:
             result = self.client.fetch()
-            events = build_events(result.events)
         except CalendarAPIError as exc:
             self.after(0, lambda: self._handle_error(str(exc)))
             return
-        self.after(0, lambda: self._handle_fetch_success(events))
 
-    def _handle_fetch_success(self, events: list[CalendarEvent]) -> None:
+        events = build_events(result.events)
+        self.after(0, lambda: self._handle_fetch_success(events, result))
+
+    def _handle_fetch_success(
+        self, events: list[CalendarEvent], fetch_result
+    ) -> None:
         self._fetch_thread = None
         self.all_events = sort_events(events, by_impact_first=False)
         self.latest_event_date = self._latest_event_date(self.all_events)
         self.apply_filters(status_prefix="Fetched latest calendar from API")
+        self._update_last_updated(
+            source=fetch_result.source,
+            fetched_at=fetch_result.fetched_at,
+            from_cache=fetch_result.from_cache,
+        )
 
     def _handle_error(self, message: str) -> None:
         self._fetch_thread = None
@@ -295,6 +315,8 @@ class ForexNewsApp(Window):
 
     def _populate_tree(self, events: Iterable[CalendarEvent]) -> None:
         self.tree.delete(*self.tree.get_children())
+        self._tree_event_map.clear()
+
         for index, event in enumerate(events):
             tags: list[str] = []
             if event.impact is ImpactLevel.HIGH:
@@ -307,7 +329,7 @@ class ForexNewsApp(Window):
                 tags.append("odd-row")
 
             local_dt = event.datetime_local
-            self.tree.insert(
+            item_id = self.tree.insert(
                 "",
                 END,
                 values=(
@@ -322,6 +344,22 @@ class ForexNewsApp(Window):
                 ),
                 tags=tags,
             )
+            self._tree_event_map[item_id] = event
+
+    def _on_tree_double_click(self, _event: object) -> None:
+        selection = self.tree.selection()
+        if not selection:
+            return
+        item_id = selection[0]
+        event = self._tree_event_map.get(item_id)
+        if not event:
+            return
+
+        Messagebox.show_info(
+            "Event Details",
+            self._format_event_details(event),
+            parent=self,
+        )
 
     def _reset_filters(self) -> None:
         for var in self.impact_filters.values():
@@ -365,7 +403,40 @@ class ForexNewsApp(Window):
     def _format_status(self, prefix: str) -> str:
         count = len(self.filtered_events)
         plural = "s" if count != 1 else ""
-        return f"{prefix} ? {count} event{plural} visible"
+        return f"{prefix} - {count} event{plural} visible"
+
+    def _update_last_updated(
+        self, *, source: str, fetched_at: datetime | None, from_cache: bool
+    ) -> None:
+        self.last_fetch_source = source
+        self.last_fetch_timestamp = fetched_at
+
+        origin = "cache" if from_cache else "API"
+        if fetched_at:
+            display_time = fetched_at.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+        else:
+            display_time = "unknown"
+
+        self.last_updated_var.set(
+            f"Last updated: {display_time} ({origin}) - Source: {source}"
+        )
+
+    def _format_event_details(self, event: CalendarEvent) -> str:
+        local_time = event.datetime_local.strftime("%Y-%m-%d %I:%M %p %Z").lstrip("0")
+        utc_time = event.datetime_utc.strftime("%Y-%m-%d %H:%M UTC")
+        lines = [
+            event.title,
+            "",
+            f"Impact: {event.impact.value}",
+            f"Currency: {event.currency}",
+            f"Local Time: {local_time}",
+            f"UTC Time: {utc_time}",
+            "",
+            f"Actual: {event.actual or 'n/a'}",
+            f"Forecast: {event.forecast or 'n/a'}",
+            f"Previous: {event.previous or 'n/a'}",
+        ]
+        return "\n".join(lines)
 
 
 def run() -> None:
